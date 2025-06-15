@@ -1,0 +1,155 @@
+/* === HOJA DE ESTILOS DARK HIGH-CONTRAST === */
+
+/* --- Ventana Principal y Fuentes --- */
+QWidget {
+    background-color: #121212; /* Fondo negro profundo, base del diseño oscuro */
+    color: #e0e0e0;             /* Color de texto principal, un blanco suave para no cansar la vista */
+    font-family: "Segoe UI", sans-serif;
+}
+
+/* --- Títulos y Etiquetas --- */
+QLabel#titulo, QPushButton#titulo_btn {
+    color: #ffffff;      /* Blanco puro para el título principal, máximo contraste */
+    font-size: 28px;
+    font-weight: bold;
+}
+
+QLabel#subtitulo, QPushButton#subtitulo_btn {
+    color: #bb86fc;      /* Color de acento (violeta) para el subtítulo */
+    font-size: 15px;
+    font-style: italic;
+}
+
+QLabel { /* Estilo para etiquetas de sección */
+    color: #e0e0e0;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+/* --- Botones --- */
+QPushButton {
+    background-color: #333333;
+    color: #e0e0e0;
+    border: 2px solid #444444;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+QPushButton:hover {
+    background-color: #444444;
+    border-color: #bb86fc; /* Borde de acento al pasar el cursor */
+}
+
+QPushButton:pressed {
+    background-color: #bb86fc;
+    color: #121212; /* Texto oscuro al presionar para contraste */
+}
+
+/* Botón principal de "Organizar" */
+QPushButton#btn_organizar {
+    background-color: #bb86fc; /* Color de acento para la acción principal */
+    color: #121212;
+    font-size: 16px;
+    padding: 14px;
+}
+QPushButton#btn_organizar:hover {
+    background-color: #d1b3ff;
+}
+QPushButton#btn_organizar:pressed {
+    background-color: #8a4be8;
+}
+
+/* Botones especiales que parecen texto (para título y subtítulo) */
+QPushButton.ClickableLabel {
+    background-color: transparent;
+    border: none;
+    text-align: left;
+    padding: 0;
+}
+QPushButton.ClickableLabel:hover {
+    text-decoration: underline;
+}
+
+/* --- Footer --- */
+QLabel#footer {
+    color: #bb86fc;
+    font-size: 13px;
+    text-align: center;
+    padding: 8px 0;
+    transition: color 0.2s;
+    cursor: pointer;
+    width: 100%;
+    margin: 0;
+    qproperty-alignment: AlignCenter;
+}
+QLabel#footer:hover {
+    color: #ffffff;
+}
+
+/* --- Checkboxes --- */
+QCheckBox {
+    spacing: 12px;
+    font-size: 14px;
+    color: #e0e0e0;
+}
+
+QCheckBox::indicator {
+    width: 22px;
+    height: 22px;
+    border: 2px solid #555555;
+    border-radius: 6px;
+    background-color: #222222;
+}
+
+QCheckBox::indicator:hover {
+    border-color: #bb86fc;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #bb86fc;
+    border-color: #bb86fc;
+    image: url(check.svg);
+}
+
+/* --- Barra de Progreso --- */
+QProgressBar {
+    border: none;
+    border-radius: 4px;
+    background-color: #333333;
+    height: 8px;
+}
+
+QProgressBar::chunk {
+    background-color: #bb86fc;
+    border-radius: 4px;
+}
+
+/* --- Separador --- */
+QFrame#separador {
+    background-color: #444444;
+    height: 1px;
+}
+
+/* --- Ventanas de Diálogo (Acerca de, etc.) --- */
+QMessageBox {
+    background-color: #212121;
+}
+
+QMessageBox QLabel {
+    color: #e0e0e0;
+    font-size: 14px;
+}
+
+/* Imagen circular para el acerca de */
+img.perfil {
+    width: 200px;
+    height: 200px;
+    border-radius: 100px;
+    border: 3px solid #bb86fc;
+    object-fit: cover;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
