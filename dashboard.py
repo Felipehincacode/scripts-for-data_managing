@@ -10,7 +10,7 @@ funcionalidades disponibles del programa.
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QGridLayout, QFrame, QScrollArea, QSizePolicy, QSpacerItem, QDialog,
-    QComboBox, QCheckBox, QFileDialog, QMessageBox, QProgressBar
+    QComboBox, QCheckBox, QFileDialog, QMessageBox, QProgressBar, QLineEdit, QSlider
 )
 from PySide6.QtCore import Qt, QTimer, QUrl, QSize
 from PySide6.QtGui import QFont, QDesktopServices, QCursor, QMovie, QPixmap, QPainter, QColor, QBrush
@@ -309,6 +309,302 @@ class OrganizadorPorFechaDialog(QDialog):
         
         self.accept()
 
+class CompararEmparejarDialog(QDialog):
+    """
+    Diálogo para comparar dos carpetas y mover archivos sin pareja a una sola carpeta.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Comparar y Mover No Emparejadas")
+        self.setMinimumSize(500, 400)
+        self.setStyleSheet("background-color: #212121; color: #e0e0e0;")
+        self.carpeta_a = ""
+        self.carpeta_b = ""
+        self.carpeta_salida = ""
+        layout = QVBoxLayout(self)
+        layout.setSpacing(20)
+        layout.setContentsMargins(30, 30, 30, 30)
+        titulo = QLabel("🔗 Comparar y Mover No Emparejadas")
+        titulo.setStyleSheet("font-size: 20px; font-weight: bold; color: #bb86fc;")
+        titulo.setAlignment(Qt.AlignCenter)
+        layout.addWidget(titulo)
+        desc = QLabel("Selecciona dos carpetas. Se moverán los archivos de ambas carpetas que no tengan pareja en la otra, a una sola carpeta de salida.")
+        desc.setStyleSheet("font-size: 14px; color: #cccccc;")
+        desc.setAlignment(Qt.AlignCenter)
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+        self.btn_a = QPushButton("📂 Seleccionar Carpeta 1")
+        self.btn_b = QPushButton("📂 Seleccionar Carpeta 2")
+        self.btn_salida = QPushButton("📁 Seleccionar Carpeta de Salida")
+        layout.addWidget(self.btn_a)
+        layout.addWidget(self.btn_b)
+        layout.addWidget(self.btn_salida)
+        self.btn_comparar = QPushButton("🚀 COMPARAR Y MOVER")
+        self.btn_comparar.setStyleSheet("""
+            QPushButton {
+                background-color: #bb86fc;
+                color: #121212;
+                font-size: 16px;
+                font-weight: bold;
+                padding: 12px;
+                border-radius: 8px;
+            }
+            QPushButton:hover {
+                background-color: #d1b3ff;
+            }
+        """)
+        layout.addWidget(self.btn_comparar)
+        self.btn_a.clicked.connect(self.seleccionar_a)
+        self.btn_b.clicked.connect(self.seleccionar_b)
+        self.btn_salida.clicked.connect(self.seleccionar_salida)
+        self.btn_comparar.clicked.connect(self.comparar_y_mover)
+    def seleccionar_a(self):
+        carpeta = QFileDialog.getExistingDirectory(self, "📂 Seleccionar Carpeta 1")
+        if carpeta:
+            self.carpeta_a = carpeta
+            self.btn_a.setText(f"📂 Carpeta 1: {os.path.basename(carpeta)}")
+    def seleccionar_b(self):
+        carpeta = QFileDialog.getExistingDirectory(self, "📂 Seleccionar Carpeta 2")
+        if carpeta:
+            self.carpeta_b = carpeta
+            self.btn_b.setText(f"📂 Carpeta 2: {os.path.basename(carpeta)}")
+    def seleccionar_salida(self):
+        carpeta = QFileDialog.getExistingDirectory(self, "📁 Seleccionar Carpeta de Salida")
+        if carpeta:
+            self.carpeta_salida = carpeta
+            self.btn_salida.setText(f"📁 Salida: {os.path.basename(carpeta)}")
+    def comparar_y_mover(self):
+        if not self.carpeta_a or not self.carpeta_b or not self.carpeta_salida:
+            QMessageBox.warning(self, "⚠️ Error", "Debes seleccionar las tres carpetas.")
+            return
+        from core import mover_no_emparejadas_ambas
+        movidos = mover_no_emparejadas_ambas([self.carpeta_a, self.carpeta_b], self.carpeta_salida)
+        mensaje = f"✅ Proceso finalizado.\n\nArchivos sin pareja movidos: {len(movidos)}\n\n¿Abrir carpeta de salida?"
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Comparación finalizada")
+        msg_box.setText(mensaje)
+        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg_box.setDefaultButton(QMessageBox.Yes)
+        if msg_box.exec() == QMessageBox.Yes:
+            abrir_carpeta(self.carpeta_salida)
+        self.accept()
+
+class ComprimirParticionarDialog(QDialog):
+    """
+    Diálogo intuitivo para comprimir y particionar carpetas seleccionadas, con barra de progreso y subida opcional a SwissTransfer.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Comprimir y Particionar Carpetas")
+        self.setMinimumSize(600, 600)
+        self.setStyleSheet("background-color: #212121; color: #e0e0e0;")
+        self.carpetas = []
+        self.destino = ""
+        self.archivos_generados = []
+        layout = QVBoxLayout(self)
+        layout.setSpacing(16)
+        layout.setContentsMargins(30, 30, 30, 30)
+        # Título
+        titulo = QLabel("🗜️ Comprimir y Particionar Carpetas")
+        titulo.setStyleSheet("font-size: 22px; font-weight: bold; color: #bb86fc;")
+        titulo.setAlignment(Qt.AlignCenter)
+        layout.addWidget(titulo)
+        # Explicación general
+        explic = QLabel("Selecciona varias carpetas para comprimirlas en un solo archivo ZIP. Puedes protegerlo con contraseña y dividirlo en partes. Al finalizar, puedes subirlo fácilmente a SwissTransfer.")
+        explic.setWordWrap(True)
+        explic.setStyleSheet("font-size: 13px; color: #cccccc;")
+        layout.addWidget(explic)
+        # Selector visual de carpetas
+        self.lista_carpetas = QVBoxLayout()
+        self.lista_carpetas.setSpacing(6)
+        self.lista_carpetas.setAlignment(Qt.AlignTop)
+        self.widget_lista = QWidget()
+        self.widget_lista.setLayout(self.lista_carpetas)
+        layout.addWidget(QLabel("Carpetas a comprimir:"))
+        layout.addWidget(self.widget_lista)
+        btns_h = QHBoxLayout()
+        self.btn_add = QPushButton("+ Añadir carpeta")
+        self.btn_add.setToolTip("Agregar una carpeta de entrada")
+        btns_h.addWidget(self.btn_add)
+        btns_h.addStretch()
+        layout.addLayout(btns_h)
+        # Carpeta de destino
+        self.btn_destino = QPushButton("📁 Seleccionar Carpeta de Destino")
+        self.btn_destino.setToolTip("El archivo ZIP se guardará aquí")
+        layout.addWidget(self.btn_destino)
+        # Nombre automático
+        layout.addWidget(QLabel("Nombre automático del ZIP:"))
+        self.combo_nombre = QComboBox()
+        self.combo_nombre.addItems(["Por nombre fijo (comprimido.zip)", "Por fecha actual", "Por fecha de última edición"])
+        self.combo_nombre.setToolTip("Elige cómo se nombrará el archivo comprimido")
+        layout.addWidget(self.combo_nombre)
+        # Contraseña
+        self.checkbox_pass = QCheckBox("Proteger con contraseña (opcional)")
+        self.checkbox_pass.setToolTip("El ZIP estará protegido. ¡No olvides la contraseña!")
+        self.input_pass = QLineEdit()
+        self.input_pass.setEchoMode(QLineEdit.Password)
+        self.input_pass.setPlaceholderText("Contraseña opcional")
+        self.input_pass.setEnabled(False)
+        layout.addWidget(self.checkbox_pass)
+        layout.addWidget(self.input_pass)
+        # Particionado opcional
+        self.checkbox_partes = QCheckBox("Particionar en partes (opcional)")
+        self.checkbox_partes.setToolTip("Divide el ZIP en partes más pequeñas para facilitar la subida o el envío.")
+        layout.addWidget(self.checkbox_partes)
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider.setMinimum(100)
+        self.slider.setMaximum(10240)
+        self.slider.setValue(4096)
+        self.slider.setTickInterval(100)
+        self.slider.setTickPosition(QSlider.TicksBelow)
+        self.label_slider = QLabel("4096 MB (4 GB)")
+        self.slider.setVisible(False)
+        self.label_slider.setVisible(False)
+        layout.addWidget(self.slider)
+        layout.addWidget(self.label_slider)
+        # SwissTransfer opcional
+        self.checkbox_swiss = QCheckBox("Abrir SwissTransfer al finalizar")
+        self.checkbox_swiss.setChecked(False)
+        self.checkbox_swiss.setToolTip("Abre el navegador en SwissTransfer para subir el archivo comprimido.")
+        layout.addWidget(self.checkbox_swiss)
+        # Resumen
+        self.label_resumen = QLabel()
+        self.label_resumen.setStyleSheet("font-size: 13px; color: #bb86fc; margin-top: 10px;")
+        layout.addWidget(self.label_resumen)
+        # Botón de acción
+        self.btn_comprimir = QPushButton("🚀 COMPRIMIR")
+        self.btn_comprimir.setStyleSheet("""
+            QPushButton {
+                background-color: #bb86fc;
+                color: #121212;
+                font-size: 16px;
+                font-weight: bold;
+                padding: 12px;
+                border-radius: 8px;
+            }
+            QPushButton:hover {
+                background-color: #d1b3ff;
+            }
+        """)
+        layout.addWidget(self.btn_comprimir)
+        # Barra de progreso emergente
+        self.progress_dialog = None
+        # Conexiones
+        self.btn_add.clicked.connect(self.agregar_carpeta)
+        self.btn_destino.clicked.connect(self.seleccionar_destino)
+        self.checkbox_pass.stateChanged.connect(self.toggle_pass)
+        self.checkbox_partes.stateChanged.connect(self.toggle_partes)
+        self.slider.valueChanged.connect(self.actualizar_slider)
+        self.btn_comprimir.clicked.connect(self.comprimir)
+        self.actualizar_lista()
+        self.actualizar_resumen()
+    def agregar_carpeta(self):
+        from PySide6.QtWidgets import QFileDialog
+        carpeta = QFileDialog.getExistingDirectory(self, "Seleccionar carpeta a comprimir")
+        if carpeta and carpeta not in self.carpetas:
+            self.carpetas.append(carpeta)
+            self.actualizar_lista()
+            self.actualizar_resumen()
+    def eliminar_carpeta(self, carpeta):
+        self.carpetas = [c for c in self.carpetas if c != carpeta]
+        self.actualizar_lista()
+        self.actualizar_resumen()
+    def actualizar_lista(self):
+        # Limpiar lista
+        for i in reversed(range(self.lista_carpetas.count())):
+            item = self.lista_carpetas.itemAt(i).widget()
+            if item:
+                item.setParent(None)
+        # Agregar cada carpeta con botón de eliminar
+        for carpeta in self.carpetas:
+            h = QHBoxLayout()
+            label = QLabel(os.path.basename(carpeta))
+            label.setToolTip(carpeta)
+            btn_del = QPushButton("✕")
+            btn_del.setFixedWidth(28)
+            btn_del.setStyleSheet("color:#fff;background:#bb86fc;border:none;border-radius:14px;font-weight:bold;")
+            btn_del.clicked.connect(lambda _, c=carpeta: self.eliminar_carpeta(c))
+            h.addWidget(label)
+            h.addWidget(btn_del)
+            h.addStretch()
+            w = QWidget()
+            w.setLayout(h)
+            self.lista_carpetas.addWidget(w)
+    def seleccionar_destino(self):
+        from PySide6.QtWidgets import QFileDialog
+        carpeta = QFileDialog.getExistingDirectory(self, "Seleccionar carpeta de destino")
+        if carpeta:
+            self.destino = carpeta
+            self.btn_destino.setText(f"📁 Destino: {os.path.basename(carpeta)}")
+            self.actualizar_resumen()
+    def toggle_pass(self, state):
+        self.input_pass.setEnabled(state == Qt.Checked)
+        self.actualizar_resumen()
+    def toggle_partes(self, state):
+        visible = state == Qt.Checked
+        self.slider.setVisible(visible)
+        self.label_slider.setVisible(visible)
+        self.actualizar_resumen()
+    def actualizar_slider(self, value):
+        gb = value / 1024
+        if gb >= 1:
+            self.label_slider.setText(f"{value} MB ({gb:.2f} GB)")
+        else:
+            self.label_slider.setText(f"{value} MB")
+        self.actualizar_resumen()
+    def actualizar_resumen(self):
+        resumen = f"<b>Resumen:</b><br>"
+        if not self.carpetas:
+            resumen += "No hay carpetas seleccionadas.<br>"
+        else:
+            resumen += f"<b>Carpetas:</b> {', '.join([os.path.basename(c) for c in self.carpetas])}<br>"
+        if self.destino:
+            resumen += f"<b>Destino:</b> {self.destino}<br>"
+        nombre_map = {0: 'Nombre fijo', 1: 'Fecha actual', 2: 'Fecha de edición'}
+        resumen += f"<b>Nombre ZIP:</b> {nombre_map[self.combo_nombre.currentIndex()]}<br>"
+        if self.checkbox_pass.isChecked():
+            resumen += "<b>Contraseña:</b> Sí<br>"
+        else:
+            resumen += "<b>Contraseña:</b> No<br>"
+        if self.checkbox_partes.isChecked():
+            resumen += f"<b>Particionado:</b> Sí, {self.slider.value()} MB por parte<br>"
+        else:
+            resumen += "<b>Particionado:</b> No<br>"
+        if self.checkbox_swiss.isChecked():
+            resumen += "<b>Abrir SwissTransfer:</b> Sí<br>"
+        else:
+            resumen += "<b>Abrir SwissTransfer:</b> No<br>"
+        self.label_resumen.setText(resumen)
+    def comprimir(self):
+        if not self.carpetas or not self.destino:
+            QMessageBox.warning(self, "⚠️ Error", "Debes seleccionar al menos una carpeta y el destino.")
+            return
+        from core import comprimir_varias_carpetas_zip
+        nombre_map = {0: 'nombre', 1: 'fecha', 2: 'editado'}
+        nombre_auto = nombre_map[self.combo_nombre.currentIndex()]
+        password = self.input_pass.text() if self.checkbox_pass.isChecked() else None
+        split_size = self.slider.value() if self.checkbox_partes.isChecked() else None
+        # Barra de progreso emergente
+        from PySide6.QtWidgets import QProgressDialog
+        self.progress_dialog = QProgressDialog("Comprimiendo...", None, 0, 0, self)
+        self.progress_dialog.setWindowTitle("Progreso de compresión")
+        self.progress_dialog.setWindowModality(Qt.ApplicationModal)
+        self.progress_dialog.setMinimumDuration(0)
+        self.progress_dialog.show()
+        QApplication.processEvents()
+        try:
+            partes = comprimir_varias_carpetas_zip(self.carpetas, self.destino, nombre_auto, password, split_size)
+        except Exception as e:
+            self.progress_dialog.close()
+            QMessageBox.critical(self, "Error", f"Ocurrió un error al comprimir:\n{e}")
+            return
+        self.progress_dialog.close()
+        QMessageBox.information(self, "Completado", f"Se generaron {len(partes)} archivos ZIP/partes.")
+        self.archivos_generados = partes
+        if self.checkbox_swiss.isChecked():
+            import webbrowser
+            webbrowser.open('https://www.swisstransfer.com/es')
+
 class DashboardUI(QWidget):
     """
     Clase principal del dashboard con tarjetas de funcionalidades.
@@ -369,6 +665,13 @@ class DashboardUI(QWidget):
                 "dialogo": OrganizadorPorFechaDialog
             },
             {
+                "titulo": "Comparar y Emparejar",
+                "descripcion": "Compara dos carpetas y mueve archivos sin pareja.",
+                "icono": "🔗",
+                "color": "purple",
+                "dialogo": CompararEmparejarDialog
+            },
+            {
                 "titulo": "Análisis de Proyecto",
                 "descripcion": "Analiza el contenido de una carpeta y genera reportes detallados de archivos multimedia.",
                 "icono": "📊",
@@ -395,6 +698,13 @@ class DashboardUI(QWidget):
                 "icono": "💾",
                 "color": "teal",
                 "dialogo": None  # TODO: Implementar
+            },
+            {
+                "titulo": "Comprimir y Particionar",
+                "descripcion": "Comprime y particiona carpetas seleccionadas, y sube los archivos a SwissTransfer.",
+                "icono": "🗜️",
+                "color": "purple",
+                "dialogo": ComprimirParticionarDialog
             }
         ]
         

@@ -16,6 +16,9 @@ import json
 from datetime import datetime
 from PIL import Image
 import exifread
+import pyminizip
+import zipfile
+import time
 
 # --- Constantes ---
 # Listas de extensiones para clasificar los archivos.
@@ -411,3 +414,210 @@ def abrir_carpeta(ruta):
             subprocess.Popen(["xdg-open", ruta])
     except Exception as e:
         print(f"Error al intentar abrir la carpeta {ruta}: {e}")
+
+def comparar_y_mover_no_emparejados(carpeta_a, carpeta_b, carpeta_salida, mover_emparejados=False):
+    """
+    Compara dos carpetas y mueve los archivos de la carpeta A que no tienen pareja en la carpeta B
+    a la subcarpeta 'sin_pareja' dentro de la carpeta de salida. Opcionalmente, puede mover los emparejados.
+    
+    Args:
+        carpeta_a (str): Ruta de la primera carpeta (entrada principal).
+        carpeta_b (str): Ruta de la segunda carpeta (para comparar).
+        carpeta_salida (str): Ruta de la carpeta de salida.
+        mover_emparejados (bool): Si es True, también mueve los emparejados a 'emparejadas'.
+    
+    Returns:
+        dict: {'emparejados': [archivos], 'sin_pareja': [archivos]}
+    """
+    archivos_a = [f for f in os.listdir(carpeta_a) if os.path.isfile(os.path.join(carpeta_a, f))]
+    archivos_b = [f for f in os.listdir(carpeta_b) if os.path.isfile(os.path.join(carpeta_b, f))]
+
+    # Normalizar a nombre base (sin extensión, lower)
+    bases_a = {}
+    for f in archivos_a:
+        base = os.path.splitext(f)[0].lower()
+        if base not in bases_a:
+            bases_a[base] = []
+        bases_a[base].append(f)
+    bases_b = set(os.path.splitext(f)[0].lower() for f in archivos_b)
+
+    emparejados = []
+    sin_pareja = []
+
+    for base, files in bases_a.items():
+        if base in bases_b:
+            emparejados.extend(files)
+        else:
+            sin_pareja.extend(files)
+
+    # Crear carpetas de salida
+    carpeta_emparejados = os.path.join(carpeta_salida, 'emparejadas')
+    carpeta_sin_pareja = os.path.join(carpeta_salida, 'sin_pareja')
+    os.makedirs(carpeta_emparejados, exist_ok=True)
+    os.makedirs(carpeta_sin_pareja, exist_ok=True)
+
+    # Mover archivos sin pareja
+    for f in sin_pareja:
+        origen = os.path.join(carpeta_a, f)
+        destino = os.path.join(carpeta_sin_pareja, f)
+        shutil.move(origen, destino)
+
+    # Opcional: mover emparejados
+    if mover_emparejados:
+        for f in emparejados:
+            origen = os.path.join(carpeta_a, f)
+            destino = os.path.join(carpeta_emparejados, f)
+            shutil.move(origen, destino)
+
+    return {'emparejados': emparejados, 'sin_pareja': sin_pareja}
+
+def mover_no_emparejadas_ambas(carpetas, carpeta_salida):
+    """
+    Mueve todos los archivos sin pareja (por nombre base) de ambas carpetas a una sola carpeta 'sin_pareja' en la carpeta de salida.
+    Args:
+        carpetas (list): Lista de rutas de las dos carpetas a comparar.
+        carpeta_salida (str): Ruta de la carpeta de salida.
+    Returns:
+        list: Lista de archivos movidos.
+    """
+    assert len(carpetas) == 2, "Se requieren exactamente dos carpetas."
+    archivos = []
+    bases = [set(), set()]
+    archivos_por_base = [{}, {}]
+    # Recolectar archivos y bases
+    for idx, carpeta in enumerate(carpetas):
+        for f in os.listdir(carpeta):
+            ruta = os.path.join(carpeta, f)
+            if os.path.isfile(ruta):
+                base = os.path.splitext(f)[0].lower()
+                bases[idx].add(base)
+                archivos_por_base[idx].setdefault(base, []).append(f)
+    # Detectar sin pareja
+    sin_pareja = []
+    for idx in [0, 1]:
+        otros = bases[1-idx]
+        for base, files in archivos_por_base[idx].items():
+            if base not in otros:
+                for f in files:
+                    sin_pareja.append((carpetas[idx], f))
+    # Mover a carpeta de salida
+    carpeta_destino = os.path.join(carpeta_salida, 'sin_pareja')
+    os.makedirs(carpeta_destino, exist_ok=True)
+    movidos = []
+    for origen, f in sin_pareja:
+        ruta_origen = os.path.join(origen, f)
+        ruta_destino = os.path.join(carpeta_destino, f)
+        shutil.move(ruta_origen, ruta_destino)
+        movidos.append(f)
+    return movidos
+
+def comprimir_carpeta_zip(carpeta, destino_dir, nombre_auto='nombre', password=None, split_size=None):
+    """
+    Comprime una carpeta a un archivo ZIP, con opción de contraseña y particionado.
+    Args:
+        carpeta (str): Ruta de la carpeta a comprimir.
+        destino_dir (str): Carpeta donde guardar el ZIP.
+        nombre_auto (str): 'nombre', 'fecha', 'editado'.
+        password (str|None): Contraseña opcional.
+        split_size (int|None): Tamaño de parte en MB (None = sin particionar).
+    Returns:
+        list: Lista de rutas de archivos ZIP generados (1 o varias partes).
+    """
+    # Determinar nombre del ZIP
+    base = os.path.basename(os.path.normpath(carpeta))
+    if nombre_auto == 'nombre':
+        zipname = base + '.zip'
+    elif nombre_auto == 'fecha':
+        zipname = datetime.now().strftime('%Y%m%d_%H%M%S') + '.zip'
+    elif nombre_auto == 'editado':
+        ts = os.path.getmtime(carpeta)
+        zipname = base + '_' + time.strftime('%Y%m%d_%H%M%S', time.localtime(ts)) + '.zip'
+    else:
+        zipname = base + '.zip'
+    zip_path = os.path.join(destino_dir, zipname)
+    # Recopilar todos los archivos
+    files = []
+    for root, dirs, filenames in os.walk(carpeta):
+        for f in filenames:
+            files.append(os.path.join(root, f))
+    # Comprimir
+    if password or split_size:
+        rel_files = [os.path.relpath(f, start=carpeta) for f in files]
+        # split_size en MB, None = sin particionar
+        pyminizip.compress_multiple(files, rel_files, zip_path, password or '', 5, split_size)
+    else:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for f in files:
+                arcname = os.path.relpath(f, start=carpeta)
+                zf.write(f, arcname)
+    # Si hay particionado, devolver todas las partes
+    if split_size:
+        # pyminizip nombra las partes como archivo.zip, archivo.z01, archivo.z02, ...
+        partes = [zip_path]
+        idx = 1
+        while True:
+            parte = zip_path[:-4] + f'.z{idx:02d}'
+            if os.path.exists(parte):
+                partes.append(parte)
+                idx += 1
+            else:
+                break
+        return partes
+    else:
+        return [zip_path]
+
+def comprimir_varias_carpetas_zip(carpetas, destino_dir, nombre_auto='nombre', password=None, split_size=None):
+    """
+    Comprime varias carpetas en un solo archivo ZIP, con opción de contraseña y particionado.
+    Args:
+        carpetas (list): Lista de rutas de carpetas a comprimir.
+        destino_dir (str): Carpeta donde guardar el ZIP.
+        nombre_auto (str): 'nombre', 'fecha', 'editado'.
+        password (str|None): Contraseña opcional.
+        split_size (int|None): Tamaño de parte en MB (None = sin particionar).
+    Returns:
+        list: Lista de rutas de archivos ZIP generados (1 o varias partes).
+    """
+    # Determinar nombre del ZIP
+    if nombre_auto == 'nombre':
+        zipname = 'comprimido.zip'
+    elif nombre_auto == 'fecha':
+        zipname = datetime.now().strftime('%Y%m%d_%H%M%S') + '.zip'
+    elif nombre_auto == 'editado':
+        ts = max(os.path.getmtime(c) for c in carpetas)
+        zipname = 'comprimido_' + time.strftime('%Y%m%d_%H%M%S', time.localtime(ts)) + '.zip'
+    else:
+        zipname = 'comprimido.zip'
+    zip_path = os.path.join(destino_dir, zipname)
+    # Recopilar todos los archivos
+    files = []
+    rel_files = []
+    for carpeta in carpetas:
+        base = os.path.basename(os.path.normpath(carpeta))
+        for root, dirs, filenames in os.walk(carpeta):
+            for f in filenames:
+                abs_path = os.path.join(root, f)
+                rel_path = os.path.join(base, os.path.relpath(abs_path, start=carpeta))
+                files.append(abs_path)
+                rel_files.append(rel_path)
+    # Comprimir
+    if password or split_size:
+        pyminizip.compress_multiple(files, rel_files, zip_path, password or '', 5, split_size)
+    else:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for abs_path, rel_path in zip(files, rel_files):
+                zf.write(abs_path, rel_path)
+    # Si hay particionado, devolver todas las partes
+    if split_size:
+        partes = [zip_path]
+        idx = 1
+        while True:
+            parte = zip_path[:-4] + f'.z{idx:02d}'
+            if os.path.exists(parte):
+                partes.append(parte)
+                idx += 1
+            else:
+                break
+        return partes
+    else:
+        return [zip_path]
